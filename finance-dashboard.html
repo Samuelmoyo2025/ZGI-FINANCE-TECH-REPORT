@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Zimnat Finance Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap"
+  rel="stylesheet"
+/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #FFFFFF; }
+  #root { min-height: 100vh; }
+  input, select, button { font-family: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #C7CCD1; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9BA5AC; }
+
+  .chip { transition: background .15s ease, border-color .15s ease, color .15s ease; cursor: pointer; }
+  .chip:not(.chip-active):hover { background: #F1F3F5 !important; border-color: #9BA5AC !important; }
+
+  .nav-item { transition: background .15s ease, color .15s ease; }
+  .nav-item:not(.nav-active):hover { background: rgba(255,255,255,0.09) !important; color: #FFFFFF !important; }
+
+  .stat-card { transition: box-shadow .18s ease, transform .18s ease; }
+  .stat-card:hover { box-shadow: 0 4px 14px rgba(27,42,57,0.10); transform: translateY(-2px); }
+
+  .btn-solid { transition: opacity .15s ease, transform .12s ease; cursor: pointer; }
+  .btn-solid:hover { opacity: 0.88; }
+  .btn-solid:active { transform: scale(0.98); }
+
+  .btn-outline { transition: background .15s ease; cursor: pointer; }
+  .btn-outline:hover { background: rgba(0,0,0,0.03); }
+
+  .data-row:hover { background: #F1F3F5 !important; }
+
+  .quick-link { transition: border-color .15s ease, box-shadow .15s ease; cursor: pointer; }
+  .quick-link:hover { border-color: #00A950 !important; box-shadow: 0 4px 14px rgba(0,169,80,0.12); }
+
+  input:focus, select:focus { outline: none; border-color: #00A950 !important; box-shadow: 0 0 0 3px rgba(0,169,80,0.12); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+
+const FONT_HEAD = "'Poppins', 'Inter', system-ui, sans-serif";
+const FONT_NUM = "'IBM Plex Mono', 'Courier New', monospace";
+const FONT_UI = "'Inter', system-ui, sans-serif";
+
+const NAVY = "#134B53";
+const PAPER = "#FFFFFF";
+const PAPER_2 = "#F1F3F5";
+const RULE = "#E2E5E8";
+const RULE_STRONG = "#C7CCD1";
+const GREEN = "#00A950";
+const GREEN_DARK = "#00893F";
+const BLUE = "#008AD1";
+const RUST = "#C4453A";
+const GOLD = "#E9A23B";
+const MUTED = "#5B6670";
+const INK = NAVY;
+
+const RADIUS = 12;
+const RADIUS_SM = 8;
+const SHADOW = "0 1px 3px rgba(27,42,57,0.06), 0 1px 2px rgba(27,42,57,0.04)";
+const SHADOW_MD = "0 4px 14px rgba(27,42,57,0.08)";
+
+function tint(hex, alpha) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function money(n) {
+  const abs = Math.abs(n);
+  const s = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "-" : ""}${s}`;
+}
+function kMoney(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(2)}M`;
+  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(2)}K`;
+  return `${sign}${abs.toFixed(2)}`;
+}
+function normalizeHeader(h) {
+  return String(h || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+function excelSerialToDate(n) {
+  return new Date(Math.round((n - 25569) * 86400 * 1000));
+}
+function fmtDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return "Unknown date";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/* ------------------------------------------------------------------ */
+/* Icons (inline SVG, no external icon library needed)                 */
+/* ------------------------------------------------------------------ */
+
+function IconBase({ children }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+function IconUpload() {
+  return <IconBase><path d="M12 16V4M12 4l-4 4M12 4l4 4" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></IconBase>;
+}
+function IconLandmark() {
+  return <IconBase><path d="M3 21h18" /><path d="M5 21V9M9 21V9M15 21V9M19 21V9" /><path d="M2 9l10-6 10 6" /></IconBase>;
+}
+function IconReceipt() {
+  return <IconBase><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z" /><path d="M9 7h6M9 11h6" /></IconBase>;
+}
+function IconUsers() {
+  return <IconBase><circle cx="9" cy="8" r="3" /><path d="M2 20c0-3.3 3-6 7-6s7 2.7 7 6" /><path d="M16 5.5a3 3 0 0 1 0 5.8" /><path d="M22 20c0-2.6-1.9-4.8-4.5-5.6" /></IconBase>;
+}
+function IconShield() {
+  return <IconBase><path d="M12 2l8 3v6c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5l8-3z" /><path d="M9 12l2 2 4-4" /></IconBase>;
+}
+function IconWallet() {
+  return <IconBase><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3" /><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1h-4a2 2 0 0 0 0 4h5" /></IconBase>;
+}
+function IconTrendUp() {
+  return <IconBase><path d="M3 17l6-6 4 4 7-8" /><path d="M14 7h6v6" /></IconBase>;
+}
+function IconTrendDown() {
+  return <IconBase><path d="M3 7l6 6 4-4 7 8" /><path d="M14 17h6v-6" /></IconBase>;
+}
+function IconArrowRight() {
+  return <IconBase><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></IconBase>;
+}
+function IconClock() {
+  return <IconBase><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></IconBase>;
+}
+function IconInbox() {
+  return <IconBase><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5h13l3.5 7v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7l3.5-7z" /></IconBase>;
+}
+function IconLayers() {
+  return <IconBase><path d="M12 2l9 5-9 5-9-5 9-5z" /><path d="M3 12l9 5 9-5" /><path d="M3 17l9 5 9-5" /></IconBase>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared design primitives                                            */
+/* ------------------------------------------------------------------ */
+
+function StatCard({ label, value, icon, tone = "navy", sub }) {
+  const Icon = icon;
+  const roleColor = tone === "rust" ? RUST : tone === "green" ? GREEN_DARK : tone === "gold" ? GOLD : NAVY;
+  return (
+    <div className="stat-card" style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "16px 18px", flex: 1, minWidth: 150 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        {Icon && (
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: tint(roleColor, 0.12), color: roleColor, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon />
+          </div>
+        )}
+        <div style={{ fontFamily: FONT_UI, fontSize: 11.5, color: MUTED, fontWeight: 500 }}>{label}</div>
+      </div>
+      <div style={{ fontFamily: FONT_NUM, fontSize: 21, color: tone === "navy" ? INK : roleColor, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      {sub && <div style={{ fontFamily: FONT_UI, fontSize: 11, color: MUTED, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function SectionHeading({ icon, children }) {
+  const Icon = icon;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      {Icon && <span style={{ color: GREEN_DARK, display: "flex" }}><Icon /></span>}
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 500 }}>{children}</div>
+    </div>
+  );
+}
+
+function PageHeader({ title, subtitle }) {
+  return (
+    <div style={{ padding: "26px 28px 20px" }}>
+      <h1 style={{ fontFamily: FONT_HEAD, fontWeight: 500, fontSize: 28, margin: 0, color: INK }}>{title}</h1>
+      <div style={{ width: 46, height: 4, borderRadius: 4, background: `linear-gradient(90deg, ${GREEN}, ${BLUE})`, marginTop: 10 }} />
+      {subtitle && <div style={{ fontFamily: FONT_UI, fontSize: 13, color: MUTED, marginTop: 10, maxWidth: 560 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, body }) {
+  const Icon = icon;
+  return (
+    <div style={{ margin: "24px 28px", padding: "48px 28px", textAlign: "center", border: `1.5px dashed ${RULE_STRONG}`, borderRadius: RADIUS, background: PAPER_2 }}>
+      {Icon && <div style={{ width: 44, height: 44, borderRadius: 12, background: tint(GREEN, 0.12), color: GREEN_DARK, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Icon /></div>}
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 16, color: INK, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontFamily: FONT_UI, fontSize: 13, color: MUTED, maxWidth: 360, margin: "0 auto" }}>{body}</div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar                                                             */
+/* ------------------------------------------------------------------ */
+
+const NAV_ITEMS = [
+  { key: "overview", label: "Overview", icon: IconLayers },
+  { key: "upload", label: "Upload data", icon: IconUpload },
+  { key: "cash", label: "Cash position", icon: IconLandmark },
+  { key: "payments", label: "Payments", icon: IconReceipt },
+  { key: "debtors", label: "Debtors", icon: IconUsers },
+  { key: "ri", label: "RI receivables", icon: IconShield },
+];
+
+function Sidebar({ active, onSelect, dataStatus, selectedDate, onPrevDay, onNextDay, onToday, onDateChange, cloudLoading }) {
+  return (
+    <div style={{ width: 224, flexShrink: 0, background: NAVY, color: PAPER, minHeight: "100%", padding: "22px 12px", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 10px 20px", borderBottom: "1px solid rgba(255,255,255,0.14)", marginBottom: 16 }}>
+        <div style={{ fontFamily: FONT_HEAD, fontWeight: 600, fontSize: 19, color: GREEN, lineHeight: 1 }}>Zimnat</div>
+        <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.25)" }} />
+        <div style={{ fontFamily: FONT_UI, fontSize: 9.5, letterSpacing: "0.02em", color: "#C3CCD2", lineHeight: 1.35, textTransform: "uppercase" }}>
+          General<br />Insurance
+        </div>
+      </div>
+      <div style={{ padding: "0 10px 16px", fontFamily: FONT_UI, fontSize: 11, letterSpacing: "0.03em", color: "#8CA0AC" }}>
+        FINANCE DASHBOARD
+      </div>
+
+      {selectedDate && (
+        <div style={{ padding: "0 10px 16px" }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.03em", color: "#8CA0AC", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+            <span>VIEWING DAY</span>
+            {cloudLoading && <span style={{ color: "#5FE39A" }}>loading…</span>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={onPrevDay} title="Previous day" style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "#D7DEE2", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>‹</button>
+            <input
+              type="date" value={selectedDate} onChange={(e) => onDateChange(e.target.value)}
+              style={{ flex: 1, minWidth: 0, fontFamily: FONT_NUM, fontSize: 11, padding: "4px 4px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)", color: "#fff" }}
+            />
+            <button onClick={onNextDay} title="Next day" style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "#D7DEE2", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>›</button>
+          </div>
+          <button onClick={onToday} style={{ marginTop: 6, width: "100%", fontFamily: FONT_UI, fontSize: 10.5, padding: "4px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "#8CA0AC", cursor: "pointer" }}>Jump to today</button>
+        </div>
+      )}
+
+      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = active === item.key;
+          const status = dataStatus ? dataStatus[item.key] : undefined;
+          return (
+            <button
+              key={item.key}
+              className={`nav-item${isActive ? " nav-active" : ""}`}
+              onClick={() => onSelect(item.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 999,
+                border: "none", background: isActive ? GREEN : "transparent", color: isActive ? "#FFFFFF" : "#D7DEE2",
+                fontFamily: FONT_UI, fontSize: 13.5, fontWeight: isActive ? 500 : 400, cursor: "pointer", textAlign: "left",
+              }}
+            >
+              <Icon />
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {status !== undefined && (
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: status ? "#5FE39A" : "rgba(255,255,255,0.28)", flexShrink: 0 }} />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+      <div style={{ flex: 1 }} />
+      <div style={{ padding: "10px 10px 0", fontFamily: FONT_UI, fontSize: 10.5, color: "#6E828E", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+        Rebuilt from Power BI · runs locally in your browser
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Cash position panel (self-contained, manual entry, no upload)       */
+/* ------------------------------------------------------------------ */
+
+const CASH_SEED_ROWS = [
+  { id: 1, bank: "BancABC Bonds", opening: 432.11, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "123689", ccy: "USD" },
+  { id: 2, bank: "BancABC USD", opening: 42877.57, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: -42000, account: "123689", ccy: "USD" },
+  { id: 3, bank: "BancABC USL", opening: 30508.82, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: -29500, account: "123689", ccy: "USD" },
+  { id: 4, bank: "Cash - Head Office", opening: 83145.00, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "Head Office", ccy: "USD" },
+  { id: 5, bank: "CBZ USD", opening: 12044.76, intransit: -10000, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "660613", ccy: "USD" },
+  { id: 6, bank: "Ecobank USD", opening: 6762.52, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "578360", ccy: "USD" },
+  { id: 7, bank: "Ecocash", opening: 1802.00, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "783758", ccy: "USD" },
+  { id: 8, bank: "FBC Bank USD Dom", opening: -60473.52, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "487031", ccy: "USD" },
+  { id: 9, bank: "First Capital USD", opening: 61578.45, intransit: 0, claims: 0, ordinary: 0, reinsurance: -55695.04, transfers: 0, account: "215710", ccy: "USD" },
+  { id: 10, bank: "Icecash USD", opening: 25593.19, intransit: 10000, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "201178", ccy: "USD" },
+  { id: 11, bank: "Innbucks", opening: 210.91, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "019947", ccy: "USD" },
+  { id: 12, bank: "Innbucks MM", opening: 47666.27, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "001197", ccy: "USD" },
+];
+
+/* ------------------------------------------------------------------ */
+/* Treasury sync — reads bank opening balances straight from the       */
+/* treasury report, when it's connected in the same browser            */
+/* ------------------------------------------------------------------ */
+
+const TREASURY_CONFIG_KEY = "zimnat_treasury_supabase_config_v1";
+let treasurySbClient = null;
+
+function getTreasuryConfig() {
+  try {
+    const raw = localStorage.getItem(TREASURY_CONFIG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function saveTreasuryConfig(url, key) {
+  localStorage.setItem(TREASURY_CONFIG_KEY, JSON.stringify({ url, key }));
+}
+function getTreasuryClient() {
+  if (treasurySbClient) return treasurySbClient;
+  const cfg = getTreasuryConfig();
+  if (!cfg || !cfg.url || !cfg.key) return null;
+  treasurySbClient = supabase.createClient(cfg.url, cfg.key);
+  return treasurySbClient;
+}
+function todayISOLocal() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Most recent saved treasury day at or before the given date — mirrors how
+// the treasury report itself resolves "today" when today hasn't been saved
+// yet. Critically, a prior day's raw `opening` field is that day's STARTING
+// balance, not what today's opening should be — treasury's own
+// carryForwardFrom() logic adds that day's claims/ordinary/reinsurance/
+// transfers to get the closing balance, which becomes the next day's
+// opening (with in-transit reset to zero). We replicate that here so a
+// fallback to a prior day gives the correct effective balance, not a stale
+// figure that ignores everything that happened that day.
+async function fetchLatestTreasuryBanks(sb, dateStr) {
+  const { data, error } = await sb
+    .from("treasury_snapshots")
+    .select("data, day_date, saved_at")
+    .lte("day_date", dateStr)
+    .order("day_date", { ascending: false })
+    .order("saved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const rawBanks = (data.data && data.data.banks) || [];
+  const isExactDay = data.day_date === dateStr;
+
+  const banks = rawBanks.map((b) => {
+    if (isExactDay) {
+      return {
+        name: b.name, acctNo: b.acctNo, ccy: b.ccy,
+        opening: Number(b.opening) || 0, inTransit: Number(b.inTransit) || 0,
+        claims: Number(b.claims) || 0, ordinary: Number(b.ordinary) || 0,
+        reinsurance: Number(b.reinsurance) || 0, transfers: Number(b.transfers) || 0,
+      };
+    }
+    // Prior day fallback: that day's claims/ordinary/reinsurance/transfers
+    // already got folded into the carried-forward opening balance above, so
+    // today starts fresh at zero for those — same as treasury's own
+    // carryForwardFrom() behaviour.
+    const adjustedOpening = (Number(b.opening) || 0) + (Number(b.inTransit) || 0);
+    const closing = adjustedOpening + (Number(b.claims) || 0) + (Number(b.ordinary) || 0) + (Number(b.reinsurance) || 0) + (Number(b.transfers) || 0);
+    return {
+      name: b.name, acctNo: b.acctNo, ccy: b.ccy,
+      opening: closing, inTransit: 0,
+      claims: 0, ordinary: 0, reinsurance: 0, transfers: 0,
+    };
+  });
+
+  return { banks, dayDate: data.day_date, isExactDay, requestedDate: dateStr };
+}
+
+/* ------------------------------------------------------------------ */
+/* Finance dashboard persistence — Payments/Debtors/RI saved to the     */
+/* SAME Supabase project as treasury, in a separate `finance_snapshots` */
+/* table, keyed by dataset + day. Requires this one-time SQL setup:     */
+/*                                                                      */
+/* create table if not exists finance_snapshots (                      */
+/*   id bigint generated always as identity primary key,                */
+/*   dataset text not null check (dataset in ('payments','debtors','ri')), */
+/*   day_date date not null,                                            */
+/*   data jsonb not null,                                               */
+/*   saved_by_name text,                                                */
+/*   saved_by_email text,                                               */
+/*   saved_at timestamptz not null default now()                        */
+/* );                                                                    */
+/* create index if not exists finance_snapshots_lookup                  */
+/*   on finance_snapshots (dataset, day_date, saved_at desc);            */
+/* alter table finance_snapshots enable row level security;             */
+/* create policy "authenticated read" on finance_snapshots               */
+/*   for select to authenticated using (true);                          */
+/* create policy "authenticated insert" on finance_snapshots             */
+/*   for insert to authenticated with check (true);                     */
+/* ------------------------------------------------------------------ */
+
+function reviveDates(records, dateFields) {
+  return records.map((r) => {
+    const copy = { ...r };
+    dateFields.forEach((f) => {
+      if (copy[f]) copy[f] = new Date(copy[f]);
+    });
+    return copy;
+  });
+}
+
+async function saveFinanceSnapshot(sb, dataset, dayDate, data, user) {
+  const { error } = await sb.from("finance_snapshots").insert({
+    dataset, day_date: dayDate, data, saved_by_name: user.name, saved_by_email: user.email,
+  });
+  if (error) throw error;
+}
+
+async function loadFinanceSnapshot(sb, dataset, dayDate) {
+  const { data, error } = await sb
+    .from("finance_snapshots")
+    .select("data, saved_by_name, saved_by_email, saved_at")
+    .eq("dataset", dataset)
+    .eq("day_date", dayDate)
+    .order("saved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function fetchFinanceAudit(sb, dataset, limit) {
+  const { data, error } = await sb
+    .from("finance_snapshots")
+    .select("day_date, saved_by_name, saved_by_email, saved_at")
+    .eq("dataset", dataset)
+    .order("saved_at", { ascending: false })
+    .limit(limit || 8);
+  if (error) throw error;
+  return data || [];
+}
+
+function useTreasuryAuth() {
+  const [stage, setStage] = useState("checking"); // checking | connect | signin | ready
+  const [error, setError] = useState("");
+  const [user, setUser] = useState(null); // { name, email }
+  const [connUrl, setConnUrl] = useState("");
+  const [connKey, setConnKey] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const cfg = getTreasuryConfig();
+      if (!cfg) { setStage("connect"); return; }
+      const sb = getTreasuryClient();
+      if (!sb) { setStage("connect"); return; }
+      try {
+        const { data } = await sb.auth.getSession();
+        if (data && data.session) {
+          const u = data.session.user;
+          setUser({ name: (u.user_metadata && u.user_metadata.full_name) || u.email, email: u.email });
+          setStage("ready");
+        } else {
+          setStage("signin");
+        }
+      } catch (e) {
+        setStage("connect");
+      }
+    })();
+  }, []);
+
+  async function handleConnect() {
+    setError("");
+    if (!connUrl.trim() || !connKey.trim()) { setError("Both fields are required."); return; }
+    try {
+      treasurySbClient = supabase.createClient(connUrl.trim(), connKey.trim());
+      const { error: e } = await treasurySbClient.auth.getSession();
+      if (e) throw e;
+      saveTreasuryConfig(connUrl.trim(), connKey.trim());
+      setStage("signin");
+    } catch (e) {
+      setError("Could not reach that project — check the URL and key.");
+    }
+  }
+
+  async function handleSignIn() {
+    setError("");
+    const sb = getTreasuryClient();
+    if (!sb) { setStage("connect"); return; }
+    try {
+      const { data, error: e } = await sb.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPassword });
+      if (e) throw e;
+      const u = data.session.user;
+      setUser({ name: (u.user_metadata && u.user_metadata.full_name) || u.email, email: u.email });
+      setStage("ready");
+    } catch (e) {
+      setError("Sign-in failed — check email and password.");
+    }
+  }
+
+  return { stage, error, user, connUrl, setConnUrl, connKey, setConnKey, loginEmail, setLoginEmail, loginPassword, setLoginPassword, handleConnect, handleSignIn };
+}
+
+// Compact connect/sign-in bar, reused wherever treasury auth gates a feature
+// (Cash Position sync, Upload tab saving). Renders nothing once ready —
+// the caller decides what "ready" content to show.
+function TreasuryAuthBar({ auth, readyLabel }) {
+  if (auth.stage === "checking") {
+    return <span style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED }}>Checking treasury connection…</span>;
+  }
+  if (auth.stage === "connect") {
+    return (
+      <>
+        <span style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED, flexShrink: 0 }}>Connect the treasury report:</span>
+        <input value={auth.connUrl} onChange={(e) => auth.setConnUrl(e.target.value)} placeholder="Supabase project URL" style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: 220 }} />
+        <input value={auth.connKey} onChange={(e) => auth.setConnKey(e.target.value)} placeholder="Publishable / anon key" style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: 220 }} />
+        <button className="btn-solid" onClick={auth.handleConnect} style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 14px", borderRadius: RADIUS_SM, background: NAVY, color: PAPER, border: `1px solid ${NAVY}` }}>Connect</button>
+      </>
+    );
+  }
+  if (auth.stage === "signin") {
+    return (
+      <>
+        <span style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED, flexShrink: 0 }}>Sign in to {readyLabel || "continue"}:</span>
+        <input value={auth.loginEmail} onChange={(e) => auth.setLoginEmail(e.target.value)} placeholder="Email" type="email" style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: 200 }} />
+        <input value={auth.loginPassword} onChange={(e) => auth.setLoginPassword(e.target.value)} placeholder="Password" type="password" style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: 160 }} />
+        <button className="btn-solid" onClick={auth.handleSignIn} style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 14px", borderRadius: RADIUS_SM, background: NAVY, color: PAPER, border: `1px solid ${NAVY}` }}>Sign in</button>
+      </>
+    );
+  }
+  return null;
+}
+
+function CashPositionPanel({ auth }) {
+  const [rows, setRows] = useState(CASH_SEED_ROWS);
+  const [currency, setCurrency] = useState("USD");
+  const [bankFilter, setBankFilter] = useState("All");
+  const [acctFilter, setAcctFilter] = useState("All");
+  const [editingId, setEditingId] = useState(null);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [lastSync, setLastSync] = useState(null); // { dayDate, at, isExactDay, requestedDate }
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncError("");
+    try {
+      const sb = getTreasuryClient();
+      if (!sb) throw new Error("Not connected");
+      const result = await fetchLatestTreasuryBanks(sb, todayISOLocal());
+      if (!result || !result.banks.length) {
+        setSyncError("No treasury data found yet for today or any prior day.");
+        setSyncing(false);
+        return;
+      }
+      setRows((prev) => {
+        const next = prev.map((r) => ({ ...r, ccy: r.ccy || "USD" }));
+        let nextId = Math.max(0, ...next.map((r) => r.id)) + 1;
+        result.banks.forEach((tb) => {
+          const tbName = String(tb.name || "").trim();
+          if (!tbName) return;
+          const tbCcy = tb.ccy === "ZWG" ? "ZWG" : "USD";
+          const match = next.find((r) => r.bank.toLowerCase() === tbName.toLowerCase() && r.ccy === tbCcy);
+          if (match) {
+            match.opening = Number(tb.opening) || 0;
+            match.intransit = Number(tb.inTransit) || 0;
+            match.claims = Number(tb.claims) || 0;
+            match.ordinary = Number(tb.ordinary) || 0;
+            match.reinsurance = Number(tb.reinsurance) || 0;
+            match.transfers = Number(tb.transfers) || 0;
+            match.account = tb.acctNo || match.account;
+          } else {
+            next.push({
+              id: nextId++, bank: tbName, opening: Number(tb.opening) || 0, intransit: Number(tb.inTransit) || 0,
+              claims: Number(tb.claims) || 0, ordinary: Number(tb.ordinary) || 0,
+              reinsurance: Number(tb.reinsurance) || 0, transfers: Number(tb.transfers) || 0,
+              account: tb.acctNo || "", ccy: tbCcy,
+            });
+          }
+        });
+        return next;
+      });
+      setLastSync({ dayDate: result.dayDate, at: new Date(), isExactDay: result.isExactDay, requestedDate: result.requestedDate });
+    } catch (e) {
+      setSyncError("Sync failed — " + (e.message || "unknown error"));
+    }
+    setSyncing(false);
+  }
+
+  useEffect(() => { setBankFilter("All"); setAcctFilter("All"); }, [currency]);
+
+  const rowsInCcy = useMemo(() => rows.filter((r) => (r.ccy || "USD") === currency), [rows, currency]);
+  const bankNames = useMemo(() => ["All", ...Array.from(new Set(rowsInCcy.map((r) => r.bank)))], [rowsInCcy]);
+  const acctNumbers = useMemo(() => ["All", ...Array.from(new Set(rowsInCcy.map((r) => r.account)))], [rowsInCcy]);
+
+  const filtered = rowsInCcy.filter(
+    (r) => (bankFilter === "All" || r.bank === bankFilter) && (acctFilter === "All" || r.account === acctFilter)
+  );
+
+  function computed(r) {
+    const adjustedOpening = r.opening + r.intransit;
+    const totalProposed = r.claims + r.ordinary + r.reinsurance + r.transfers;
+    const closing = adjustedOpening + totalProposed;
+    return { ...r, adjustedOpening, totalProposed, closing };
+  }
+
+  const rowsC = filtered.map(computed);
+
+  const totals = rowsC.reduce(
+    (acc, r) => ({
+      opening: acc.opening + r.opening,
+      intransit: acc.intransit + r.intransit,
+      adjustedOpening: acc.adjustedOpening + r.adjustedOpening,
+      claims: acc.claims + r.claims,
+      ordinary: acc.ordinary + r.ordinary,
+      reinsurance: acc.reinsurance + r.reinsurance,
+      transfers: acc.transfers + r.transfers,
+      totalProposed: acc.totalProposed + r.totalProposed,
+      closing: acc.closing + r.closing,
+    }),
+    { opening: 0, intransit: 0, adjustedOpening: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, totalProposed: 0, closing: 0 }
+  );
+
+  function updateRow(id, field, value) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value === "" ? 0 : Number(value) } : r)));
+  }
+  function updateText(id, field, value) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  }
+  function addRow() {
+    const nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
+    setRows((prev) => [...prev, { id: nextId, bank: "New account", opening: 0, intransit: 0, claims: 0, ordinary: 0, reinsurance: 0, transfers: 0, account: "", ccy: currency }]);
+    setEditingId(nextId);
+  }
+  function removeRow(id) {
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  const numCols = [
+    { key: "opening", label: "Opening bal", editable: true },
+    { key: "intransit", label: "Intransit", editable: true },
+    { key: "adjustedOpening", label: "Adjusted opening", editable: false },
+    { key: "claims", label: "Claims payments", editable: true },
+    { key: "ordinary", label: "Ordinary reinsurance", editable: true },
+    { key: "reinsurance", label: "Reinsurance payments", editable: true },
+    { key: "transfers", label: "Transfers", editable: true },
+    { key: "totalProposed", label: "Total proposed", editable: false },
+    { key: "closing", label: "Closing bal", editable: false },
+  ];
+
+  return (
+    <div>
+      <div style={{ borderBottom: `1px solid ${RULE}`, padding: "26px 28px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{ fontFamily: FONT_HEAD, fontWeight: 500, fontSize: 28, margin: 0, color: INK }}>Cash position</h1>
+            <div style={{ width: 46, height: 4, borderRadius: 4, background: `linear-gradient(90deg, ${GREEN}, ${BLUE})`, marginTop: 10 }} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["USD", "ZWG"].map((c) => (
+              <button key={c} className={`chip${currency === c ? " chip-active" : ""}`} onClick={() => setCurrency(c)} style={{ fontFamily: FONT_NUM, fontSize: 13, padding: "6px 14px", borderRadius: RADIUS_SM, background: currency === c ? INK : "transparent", color: currency === c ? PAPER : INK, border: `1px solid ${INK}` }}>{c}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 20, marginTop: 18, flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: MUTED, display: "flex", flexDirection: "column", gap: 4 }}>
+            Bank name
+            <select value={bankFilter} onChange={(e) => setBankFilter(e.target.value)} style={{ fontFamily: FONT_UI, fontSize: 13, padding: "6px 8px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, color: INK }}>
+              {bankNames.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 12, color: MUTED, display: "flex", flexDirection: "column", gap: 4 }}>
+            Account number
+            <select value={acctFilter} onChange={(e) => setAcctFilter(e.target.value)} style={{ fontFamily: FONT_UI, fontSize: 13, padding: "6px 8px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, color: INK }}>
+              {acctNumbers.map((a) => <option key={a} value={a}>{a === "" ? "(blank)" : a}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div style={{ margin: "18px 28px 0", padding: "14px 18px", background: PAPER_2, border: `1px solid ${RULE}`, borderRadius: RADIUS, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <TreasuryAuthBar auth={auth} readyLabel="pull bank balances from treasury" />
+
+        {auth.stage === "ready" && (
+          <>
+            <button className="btn-solid" onClick={handleSync} disabled={syncing} style={{ fontFamily: FONT_UI, fontSize: 12.5, padding: "7px 16px", borderRadius: RADIUS_SM, background: GREEN_DARK, color: "#fff", border: `1px solid ${GREEN_DARK}`, opacity: syncing ? 0.7 : 1 }}>
+              {syncing ? "Syncing…" : "Sync from treasury"}
+            </button>
+            <span style={{ fontFamily: FONT_UI, fontSize: 12, color: MUTED }}>
+              {lastSync
+                ? (lastSync.isExactDay
+                    ? `Last synced: treasury day ${lastSync.dayDate} (today), ${lastSync.at.toLocaleTimeString()}`
+                    : `Last synced: carried forward from treasury day ${lastSync.dayDate} (${lastSync.requestedDate} not yet saved in treasury), ${lastSync.at.toLocaleTimeString()}`)
+                : "Pulls opening balance, intransit, claims, ordinary, reinsurance, and transfers per bank straight from treasury."}
+            </span>
+          </>
+        )}
+
+        {(auth.error || syncError) && <span style={{ fontFamily: FONT_UI, fontSize: 12, color: RUST }}>{auth.error || syncError}</span>}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "20px 28px 4px" }}>
+        <StatCard label="Opening balance" value={kMoney(totals.opening)} icon={IconWallet} />
+        <StatCard label="Intransit" value={kMoney(totals.intransit)} icon={IconClock} />
+        <StatCard label="Adjusted opening" value={kMoney(totals.adjustedOpening)} icon={IconWallet} />
+        <StatCard label="Claim payments" value={kMoney(totals.claims)} icon={IconTrendDown} tone={totals.claims < 0 ? "rust" : "navy"} />
+        <StatCard label="Reinsurance payments" value={kMoney(totals.reinsurance)} icon={IconShield} tone={totals.reinsurance < 0 ? "rust" : "navy"} />
+        <StatCard label="Closing balance after payments" value={kMoney(totals.closing)} icon={IconTrendUp} tone="green" />
+      </div>
+
+      <div style={{ padding: "22px 28px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <SectionHeading icon={IconLandmark}>Bank ledger</SectionHeading>
+        <button className="btn-outline" onClick={addRow} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "6px 14px", borderRadius: RADIUS_SM, background: "transparent", color: GREEN_DARK, border: `1px solid ${GREEN_DARK}` }}>+ Add account</button>
+      </div>
+
+      <div style={{ padding: "0 28px 28px", overflowX: "auto" }}>
+        <div style={{ border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_NUM, fontSize: 12.5, minWidth: 1100 }}>
+          <thead>
+            <tr style={{ background: PAPER_2, borderBottom: `1px solid ${RULE}` }}>
+              <th style={{ textAlign: "left", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>Bank name</th>
+              {numCols.map((c) => (
+                <th key={c.key} style={{ textAlign: "right", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px", whiteSpace: "nowrap" }}>{c.label}</th>
+              ))}
+              <th style={{ textAlign: "left", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>Account</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowsC.map((r, i) => (
+              <tr key={r.id} className="data-row" style={{ background: i % 2 === 1 ? PAPER_2 : "transparent", borderBottom: `1px solid ${RULE}` }}>
+                <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontSize: 13 }}>
+                  {editingId === r.id ? (
+                    <input value={r.bank} onChange={(e) => updateText(r.id, "bank", e.target.value)} style={{ fontFamily: FONT_UI, fontSize: 13, width: "100%", border: `1px solid ${RULE_STRONG}`, borderRadius: 6, padding: "3px 6px", background: PAPER }} />
+                  ) : r.bank}
+                </td>
+                {numCols.map((c) => {
+                  const val = r[c.key];
+                  const negative = val < 0;
+                  if (c.editable && editingId === r.id) {
+                    return (
+                      <td key={c.key} style={{ padding: "5px 10px" }}>
+                        <input type="number" value={val} onChange={(e) => updateRow(r.id, c.key, e.target.value)} style={{ fontFamily: FONT_NUM, fontSize: 12.5, width: 90, textAlign: "right", border: `1px solid ${RULE_STRONG}`, borderRadius: 6, padding: "3px 6px", background: PAPER }} />
+                      </td>
+                    );
+                  }
+                  return (
+                    <td key={c.key} style={{ padding: "9px 10px", textAlign: "right", color: negative ? RUST : INK, fontVariantNumeric: "tabular-nums" }}>{money(val)}</td>
+                  );
+                })}
+                <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontSize: 12.5, color: MUTED }}>
+                  {editingId === r.id ? (
+                    <input value={r.account} onChange={(e) => updateText(r.id, "account", e.target.value)} style={{ fontFamily: FONT_UI, fontSize: 12.5, width: 90, border: `1px solid ${RULE_STRONG}`, borderRadius: 6, padding: "3px 6px", background: PAPER }} />
+                  ) : (r.account || "—")}
+                </td>
+                <td style={{ padding: "9px 10px", whiteSpace: "nowrap" }}>
+                  {editingId === r.id ? (
+                    <button className="btn-outline" onClick={() => setEditingId(null)} style={{ fontFamily: FONT_UI, fontSize: 11, borderRadius: 6, border: `1px solid ${GREEN_DARK}`, background: "transparent", color: GREEN_DARK, padding: "3px 8px" }}>Done</button>
+                  ) : (
+                    <>
+                      <button className="btn-outline" onClick={() => setEditingId(r.id)} style={{ fontFamily: FONT_UI, fontSize: 11, borderRadius: 6, border: `1px solid ${RULE_STRONG}`, background: "transparent", color: INK, padding: "3px 8px", marginRight: 6 }}>Edit</button>
+                      <button className="btn-outline" onClick={() => removeRow(r.id)} style={{ fontFamily: FONT_UI, fontSize: 11, borderRadius: 6, border: `1px solid ${RULE_STRONG}`, background: "transparent", color: RUST, padding: "3px 8px" }}>Remove</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: `2px solid ${INK}` }}>
+              <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontWeight: 500, fontSize: 13 }}>Total</td>
+              {numCols.map((c) => (
+                <td key={c.key} style={{ padding: "9px 10px", textAlign: "right", fontWeight: 500, color: totals[c.key] < 0 ? RUST : INK, fontVariantNumeric: "tabular-nums" }}>{money(totals[c.key])}</td>
+              ))}
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+        </div>
+      </div>
+
+      <div style={{ padding: "0 28px 28px", fontFamily: FONT_UI, fontSize: 11.5, color: MUTED, maxWidth: 640 }}>
+        "Sync from treasury" pulls every figure — opening balance, intransit, claims, ordinary, reinsurance,
+        transfers, bank name, and account number — straight from the treasury report's latest saved day, matching
+        accounts by name and currency; matched accounts get updated, new ones get added. If today hasn't been
+        saved in treasury yet, the sync carries the prior day's closing balance forward as today's opening (with
+        claims/ordinary/reinsurance/transfers reset to zero, since that day's activity is already folded into the
+        carried-forward balance) — same as treasury's own day-to-day carry forward.
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Parsers (shared by the Upload tab)                                  */
+/* ------------------------------------------------------------------ */
+
+const PAY_MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const PAY_HEADER_SYNONYMS = {
+  date: "date", details: "details", description: "description", amount: "amount", settled: "settled",
+  "outstanding amount": "outstanding", tradogramstatus: "status", department: "department",
+  currency: "currency", month: "month", year: "year",
+};
+
+function parsePaymentsWorkbook(file, arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+  const headerRowIdx = rows.findIndex((r) => r && r.some((c) => normalizeHeader(c) === "amount"));
+  if (headerRowIdx < 0) return [];
+  const headerRow = rows[headerRowIdx];
+  const col = {};
+  headerRow.forEach((h, i) => {
+    const key = PAY_HEADER_SYNONYMS[normalizeHeader(h)];
+    if (key && !(key in col)) col[key] = i;
+  });
+
+  const records = [];
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const details = r[col.details];
+    if (!details) continue;
+    let date = r[col.date];
+    if (typeof date === "number") date = excelSerialToDate(date);
+    else if (date && !(date instanceof Date)) date = new Date(date);
+
+    records.push({
+      date,
+      details: String(details),
+      description: String(r[col.description] || ""),
+      amount: Number(r[col.amount]) || 0,
+      settled: Number(r[col.settled]) || 0,
+      outstanding: Number(r[col.outstanding]) || 0,
+      status: String(r[col.status] || "Unknown"),
+      department: String(r[col.department] || "Unknown"),
+      currency: String(r[col.currency] || "Unknown"),
+      month: String(r[col.month] || ""),
+      year: r[col.year] || null,
+      sourceFile: file.name,
+    });
+  }
+  return records;
+}
+
+const AGING_BUCKETS = [
+  { key: "d0_30", label: "0-30 days", color: "#00A950" },
+  { key: "d31_60", label: "31-60 days", color: "#6FB238" },
+  { key: "d61_90", label: "61-90 days", color: "#B0A32A" },
+  { key: "d91_120", label: "91-120 days", color: "#E9A23B" },
+  { key: "d121_180", label: "121-180 days", color: "#D9822F" },
+  { key: "d180_365", label: "180-365 days", color: "#C4453A" },
+  { key: "over365", label: "Over 365 days", color: "#8A2E22" },
+];
+
+function detectDebtorsChannel(filename, title) {
+  const f = filename.toLowerCase();
+  const t = (title || "").toLowerCase();
+  if (f.includes("broker") || t.includes("broker")) return "Broker";
+  if (f.includes("bancassurance") || t.includes("bancassurance")) return "Bancassurance";
+  return "Direct";
+}
+
+const BANCASSURANCE_CODE_PREFIXES = ["bancabchre", "first capital", "posb bancassurance", "stanbicbanc", "nbs multiple agent"];
+
+function isBancassuranceCode(code) {
+  const c = String(code || "").toLowerCase().trim();
+  return BANCASSURANCE_CODE_PREFIXES.some((m) => c.startsWith(m));
+}
+
+const DEBTORS_HEADER_SYNONYMS = {
+  "a/ccode": "acctCode", "a/cname": "acctName", "unallocated cash": "unallocatedCash",
+  "account balance": "accountBalance", "not yet due": "notYetDue", "0-30 days due": "d0_30",
+  "31-60": "d31_60", "61-90": "d61_90", "91-120": "d91_120", "121-180": "d121_180",
+  "180-365": "d180_365", "over 365 days": "over365", channel: "channel", currency: "currency",
+  branch: "branch", date: "date",
+};
+
+const MONTHS_FULL = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+function extractReportDate(title) {
+  const m = String(title || "").match(/as at\s+\w+,\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const monthIdx = MONTHS_FULL.indexOf(m[2].toLowerCase());
+  const year = Number(m[3]);
+  if (monthIdx < 0) return null;
+  return new Date(year, monthIdx, day);
+}
+
+function parseDebtorsWorkbook(file, arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+  const headerRowIdx = rows.findIndex((r) => r && r.some((c) => normalizeHeader(c) === "a/ccode"));
+  if (headerRowIdx < 0) return [];
+
+  const headerRow = rows[headerRowIdx];
+  const colIndex = {};
+  headerRow.forEach((h, i) => {
+    const key = DEBTORS_HEADER_SYNONYMS[normalizeHeader(h)];
+    if (key && !(key in colIndex)) colIndex[key] = i;
+  });
+
+  const hasCleanColumns = "currency" in colIndex && "branch" in colIndex;
+
+  const RAW_COL = {
+    acctCode: 0, acctName: 1, unallocatedCash: 2, accountBalance: 3,
+    notYetDue: 4, d0_30: 5, d31_60: 7, d61_90: 8, d91_120: 9,
+    d121_180: 10, d180_365: 11, over365: 12,
+  };
+  const cols = hasCleanColumns ? colIndex : RAW_COL;
+
+  const titleRow = rows[0] || [];
+  const title = titleRow[2] || "";
+  const fileChannel = detectDebtorsChannel(file.name, title);
+  const reportDate = extractReportDate(title);
+
+  let fileBranch = "All branches";
+  let fileCurrency = "Unknown";
+  if (!hasCleanColumns) {
+    const branchRow = rows[1] || [];
+    const branchRaw = String(branchRow[0] || "");
+    let b = branchRaw.replace("Branch:", "").trim().replace(/^T\d+-\s*/, "").trim();
+    fileBranch = !b || b.toUpperCase().includes("ALL") ? "All branches" : b;
+
+    const currencyRow = rows[2] || [];
+    const currencyRaw = String(currencyRow[0] || "");
+    fileCurrency = currencyRaw.includes("ZWG") ? "ZWG" : currencyRaw.includes("USD") ? "USD" : "Unknown";
+  }
+
+  const records = [];
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const acctCode = r[cols.acctCode];
+    const acctName = r[cols.acctName];
+    if (!acctCode || !acctName || typeof acctCode !== "string") continue;
+
+    const rowChannel = hasCleanColumns ? String(r[cols.channel] || "").trim() || fileChannel : fileChannel;
+    const channel = isBancassuranceCode(acctCode) ? "Bancassurance" : rowChannel;
+    const branch = hasCleanColumns ? String(r[cols.branch] || "").trim() || fileBranch : fileBranch;
+    const currency = hasCleanColumns ? String(r[cols.currency] || "").trim() || fileCurrency : fileCurrency;
+
+    let date = reportDate;
+    if (hasCleanColumns && "date" in cols) {
+      const rawDate = r[cols.date];
+      if (rawDate instanceof Date) date = rawDate;
+      else if (typeof rawDate === "number") date = excelSerialToDate(rawDate);
+      else if (rawDate) date = new Date(rawDate);
+    }
+
+    const accountBalance = Number(r[cols.accountBalance]) || 0;
+
+    records.push({
+      branch, currency, channel, date, sourceFile: file.name, acctCode, acctName,
+      unallocatedCash: Number(r[cols.unallocatedCash]) || 0,
+      accountBalance, grandTotal: accountBalance,
+      notYetDue: Number(r[cols.notYetDue]) || 0,
+      d0_30: Number(r[cols.d0_30]) || 0,
+      d31_60: Number(r[cols.d31_60]) || 0,
+      d61_90: Number(r[cols.d61_90]) || 0,
+      d91_120: Number(r[cols.d91_120]) || 0,
+      d121_180: Number(r[cols.d121_180]) || 0,
+      d180_365: Number(r[cols.d180_365]) || 0,
+      over365: Number(r[cols.over365]) || 0,
+    });
+  }
+  return records;
+}
+
+const AGEING_ORDER = ["A - 0 - 30Days", "B - 31 - 60Days", "D - 91 - 120Days", "E - 121 - 180Days", "F - 181 - 365Days", "G - > 365Days"];
+const AGEING_COLOR = {
+  "A - 0 - 30Days": "#00A950", "B - 31 - 60Days": "#6FB238", "D - 91 - 120Days": "#E9A23B",
+  "E - 121 - 180Days": "#D9822F", "F - 181 - 365Days": "#C4453A", "G - > 365Days": "#8A2E22",
+};
+
+const RI_HEADER_SYNONYMS = {
+  short_code: "shortCode", document_ref: "documentRef", "policy number": "policyNumber", insured: "insured",
+  doc_type: "docType", outstanding_reinsurance_amount: "outstanding", currency: "currency", ageing: "ageing",
+  channel: "channel", "ri agreement": "riAgreement", date: "date", code: "code", "thd or gi": "thdOrGi",
+};
+
+function parseRIWorkbook(file, arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+  const headerRowIdx = rows.findIndex((r) => r && r.some((c) => normalizeHeader(c) === "short_code"));
+  if (headerRowIdx < 0) return [];
+  const headerRow = rows[headerRowIdx];
+  const col = {};
+  headerRow.forEach((h, i) => {
+    const key = RI_HEADER_SYNONYMS[normalizeHeader(h)];
+    if (key && !(key in col)) col[key] = i;
+  });
+
+  const records = [];
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const shortCode = r[col.shortCode];
+    if (!shortCode) continue;
+
+    let date = r[col.date];
+    if (typeof date === "number") date = excelSerialToDate(date);
+    else if (date && !(date instanceof Date)) date = new Date(date);
+
+    const channelRaw = r[col.channel];
+    const channel = channelRaw && String(channelRaw).trim() ? String(channelRaw).trim() : "Unassigned";
+
+    records.push({
+      shortCode: String(shortCode).trim(),
+      insured: String(r[col.insured] || "").trim(),
+      docType: String(r[col.docType] || ""),
+      outstanding: Number(r[col.outstanding]) || 0,
+      currency: String(r[col.currency] || "Unknown").trim(),
+      ageing: String(r[col.ageing] || "Unknown").trim(),
+      channel,
+      riAgreement: String(r[col.riAgreement] || "Unknown").trim(),
+      thdOrGi: String(r[col.thdOrGi] || "Unknown").trim(),
+      date,
+      sourceFile: file.name,
+    });
+  }
+  return records;
+}
+
+/* ------------------------------------------------------------------ */
+/* Upload tab — the only place file inputs live                        */
+/* ------------------------------------------------------------------ */
+
+function AuditList({ audit }) {
+  if (!audit || audit.length === 0) return null;
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${RULE}` }}>
+      <div style={{ fontFamily: FONT_UI, fontSize: 10.5, letterSpacing: "0.03em", color: MUTED, marginBottom: 6, textTransform: "uppercase" }}>Audit trail — recent saves</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {audit.map((a, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, fontFamily: FONT_UI, color: MUTED }}>
+            <span>{a.saved_by_name || a.saved_by_email || "Unknown"} <span style={{ color: RULE_STRONG }}>— {a.day_date}</span></span>
+            <span style={{ fontFamily: FONT_NUM }}>{new Date(a.saved_at).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UploadSection({ title, hint, icon, accept, files, loading, error, onFiles, onClear, extraAction, locked, audit }) {
+  const inputRef = useRef(null);
+  const Icon = icon;
+  const loaded = files.length > 0;
+  return (
+    <div style={{ border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "20px 22px", marginBottom: 16, background: PAPER, opacity: locked ? 0.55 : 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: tint(loaded ? GREEN : NAVY, 0.1), color: loaded ? GREEN_DARK : NAVY, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon />
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 500 }}>{title}</div>
+              {loaded && <span style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 500, color: GREEN_DARK, background: tint(GREEN, 0.12), padding: "2px 8px", borderRadius: 999 }}>Loaded</span>}
+            </div>
+            <div style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED, maxWidth: 480, marginTop: 2 }}>{hint}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button className="btn-solid" disabled={locked} onClick={() => inputRef.current?.click()} style={{ fontFamily: FONT_UI, fontSize: 13, padding: "7px 14px", background: NAVY, color: PAPER, border: `1px solid ${NAVY}`, borderRadius: RADIUS_SM, cursor: locked ? "not-allowed" : "pointer" }}>
+            Upload file{accept === ".xlsx" ? "s" : ""}
+          </button>
+          <input ref={inputRef} type="file" multiple accept={accept} disabled={locked} style={{ display: "none" }} onChange={(e) => e.target.files && onFiles(e.target.files)} />
+          {extraAction}
+          {loaded && (
+            <button className="btn-outline" onClick={onClear} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "7px 12px", background: "transparent", color: RUST, border: `1px solid ${RUST}`, borderRadius: RADIUS_SM }}>Clear</button>
+          )}
+        </div>
+      </div>
+      {loading && <div style={{ marginTop: 10, fontSize: 13, color: MUTED }}>Reading files…</div>}
+      {error && <div style={{ marginTop: 10, fontSize: 13, color: RUST }}>{error}</div>}
+      {loaded && (
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {files.map((f, i) => (
+            <span key={i} style={{ fontFamily: FONT_NUM, fontSize: 11, padding: "4px 8px", background: PAPER_2, border: `1px solid ${RULE}`, color: MUTED, borderRadius: 6 }}>{f.name} · {f.count} rows</span>
+          ))}
+        </div>
+      )}
+      <AuditList audit={audit} />
+    </div>
+  );
+}
+
+function UploadPanel(props) {
+  const locked = props.auth.stage !== "ready";
+  return (
+    <div>
+      <PageHeader
+        title="Upload data"
+        subtitle={`Uploads save to the cloud under ${props.selectedDate} — switch the day in the sidebar to view or add to a different day's data. Files are parsed in this browser tab; only the parsed data is sent to the cloud.`}
+      />
+      <div style={{ padding: "4px 28px 8px" }}>
+        <div style={{ padding: "14px 18px", background: PAPER_2, border: `1px solid ${RULE}`, borderRadius: RADIUS, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          {locked ? (
+            <TreasuryAuthBar auth={props.auth} readyLabel="upload and save data" />
+          ) : (
+            <span style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED }}>
+              Signed in as <b style={{ color: INK }}>{props.auth.user ? (props.auth.user.name || props.auth.user.email) : ""}</b> — uploads here are saved to the cloud and attributed to you.
+            </span>
+          )}
+        </div>
+      </div>
+      <div style={{ padding: "16px 28px 24px" }}>
+        <UploadSection
+          title="Payments data"
+          icon={IconReceipt}
+          hint="The Payments Data export (.xlsx) with Date, Details, Amount, Settled, Outstanding Amount, TradogramStatus, Department, Currency, Month, Year columns."
+          accept=".xlsx"
+          files={props.paymentsFiles}
+          loading={props.paymentsLoading}
+          error={props.paymentsError}
+          onFiles={props.onPaymentsFiles}
+          onClear={props.onClearPayments}
+          locked={locked}
+          audit={props.paymentsAudit}
+        />
+        <UploadSection
+          title="Debtors"
+          icon={IconUsers}
+          hint="Your combined debtors file, or the individual branch and broker Sirius Age Analysis exports — either works, and both can be uploaded together."
+          accept=".xlsx"
+          files={props.debtorsFiles}
+          loading={props.debtorsLoading}
+          error={props.debtorsError}
+          onFiles={props.onDebtorsFiles}
+          onClear={props.onClearDebtors}
+          locked={locked}
+          audit={props.debtorsAudit}
+          extraAction={props.debtorsFiles.length > 0 && (
+            <button className="btn-outline" onClick={props.onDownloadDebtorsCombined} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "7px 12px", background: "transparent", color: GREEN_DARK, border: `1px solid ${GREEN_DARK}`, borderRadius: RADIUS_SM }}>
+              Download combined file
+            </button>
+          )}
+        />
+        <UploadSection
+          title="RI receivables"
+          icon={IconShield}
+          hint="The RI export (.xlsx) with short_code, INSURED, OUTSTANDING_REINSURANCE_AMOUNT, Ageing, Channel, RI Agreement, THD OR GI columns."
+          accept=".xlsx"
+          files={props.riFiles}
+          loading={props.riLoading}
+          error={props.riError}
+          onFiles={props.onRIFiles}
+          onClear={props.onClearRI}
+          locked={locked}
+          audit={props.riAudit}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Overview panel — landing page summarizing all datasets              */
+/* ------------------------------------------------------------------ */
+
+function OverviewPanel({ paymentsRecords, debtorsRecords, riRecords, onNavigate, selectedDate }) {
+  const paymentsUSD = useMemo(() => paymentsRecords.filter((r) => r.currency === "USD"), [paymentsRecords]);
+  const debtorsUSD = useMemo(() => debtorsRecords.filter((r) => r.currency === "USD"), [debtorsRecords]);
+  const riUSD = useMemo(() => riRecords.filter((r) => r.currency === "USD"), [riRecords]);
+
+  const paymentsSettled = paymentsUSD.reduce((a, r) => a + r.settled, 0);
+  const paymentsOutstanding = paymentsUSD.reduce((a, r) => a + r.outstanding, 0);
+  const debtorsTotal = debtorsUSD.reduce((a, r) => a + r.accountBalance, 0);
+  const riTotal = riUSD.reduce((a, r) => a + r.outstanding, 0);
+
+  const cards = [
+    {
+      key: "payments", label: "Payments", icon: IconReceipt, loaded: paymentsRecords.length > 0,
+      value: paymentsRecords.length > 0 ? kMoney(paymentsSettled) : "—",
+      sub: paymentsRecords.length > 0 ? `${kMoney(paymentsOutstanding)} outstanding · USD` : "No data uploaded yet",
+      tone: "green",
+    },
+    {
+      key: "debtors", label: "Debtors", icon: IconUsers, loaded: debtorsRecords.length > 0,
+      value: debtorsRecords.length > 0 ? kMoney(debtorsTotal) : "—",
+      sub: debtorsRecords.length > 0 ? `${debtorsUSD.length.toLocaleString()} accounts · USD` : "No data uploaded yet",
+      tone: "rust",
+    },
+    {
+      key: "ri", label: "RI receivables", icon: IconShield, loaded: riRecords.length > 0,
+      value: riRecords.length > 0 ? kMoney(riTotal) : "—",
+      sub: riRecords.length > 0 ? `${riUSD.length.toLocaleString()} lines · USD` : "No data uploaded yet",
+      tone: "gold",
+    },
+  ];
+
+  const loadedCount = cards.filter((c) => c.loaded).length;
+
+  return (
+    <div>
+      <PageHeader
+        title="Overview"
+        subtitle="A quick snapshot across payments, debtors, and RI receivables. Cash position is tracked separately since it's entered manually rather than uploaded."
+      />
+
+      <div style={{ padding: "4px 28px 8px" }}>
+        <div style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED }}>
+          Viewing <b style={{ color: INK, fontFamily: FONT_NUM }}>{selectedDate}</b> — {loadedCount} of 3 datasets loaded for this day
+          {loadedCount < 3 && (
+            <> — <span style={{ color: GREEN_DARK, cursor: "pointer", fontWeight: 500 }} onClick={() => onNavigate("upload")}>upload the rest</span></>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: "16px 28px" }}>
+        {cards.map((c) => {
+          const Icon = c.icon;
+          const roleColor = c.tone === "rust" ? RUST : c.tone === "gold" ? GOLD : GREEN_DARK;
+          return (
+            <div
+              key={c.key}
+              className="quick-link"
+              onClick={() => onNavigate(c.key)}
+              style={{ flex: 1, minWidth: 220, background: PAPER, border: `1.5px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "20px 22px" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: tint(roleColor, 0.12), color: roleColor, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Icon />
+                </div>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.loaded ? GREEN : RULE_STRONG, marginTop: 4 }} />
+              </div>
+              <div style={{ fontFamily: FONT_UI, fontSize: 12.5, color: MUTED, marginTop: 14, marginBottom: 2 }}>{c.label}</div>
+              <div style={{ fontFamily: FONT_NUM, fontSize: 24, color: INK }}>{c.value}</div>
+              <div style={{ fontFamily: FONT_UI, fontSize: 11.5, color: MUTED, marginTop: 4 }}>{c.sub}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14, color: GREEN_DARK, fontFamily: FONT_UI, fontSize: 12.5, fontWeight: 500 }}>
+                {c.loaded ? "View dashboard" : "Go to upload"} <IconArrowRight />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "8px 28px 28px" }}>
+        <div
+          className="quick-link"
+          onClick={() => onNavigate("cash")}
+          style={{ background: PAPER, border: `1.5px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 22px", display: "flex", alignItems: "center", gap: 14 }}
+        >
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: tint(NAVY, 0.08), color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <IconLandmark />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 500 }}>Cash position</div>
+            <div style={{ fontFamily: FONT_UI, fontSize: 12, color: MUTED }}>Manually maintained bank ledger — mirrors the treasury dashboard's banks section</div>
+          </div>
+          <span style={{ color: GREEN_DARK, display: "flex" }}><IconArrowRight /></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Payments panel — view only                                          */
+/* ------------------------------------------------------------------ */
+
+function PaymentsPanel({ records }) {
+  const [currency, setCurrency] = useState("USD");
+  const [department, setDepartment] = useState("All");
+  const [monthFilter, setMonthFilter] = useState(new Set());
+
+  const currencies = useMemo(() => Array.from(new Set(records.map((r) => r.currency))).sort(), [records]);
+  const departments = useMemo(() => ["All", ...Array.from(new Set(records.map((r) => r.department))).sort()], [records]);
+  const months = useMemo(
+    () => Array.from(new Set(records.map((r) => r.month))).sort((a, b) => PAY_MONTH_ORDER.indexOf(a) - PAY_MONTH_ORDER.indexOf(b)),
+    [records]
+  );
+
+  function toggleMonth(m) {
+    const next = new Set(monthFilter);
+    if (next.has(m)) next.delete(m);
+    else next.add(m);
+    setMonthFilter(next);
+  }
+
+  const filtered = useMemo(() => {
+    return records.filter((r) => {
+      if (r.currency !== currency) return false;
+      if (department !== "All" && r.department !== department) return false;
+      if (monthFilter.size > 0 && !monthFilter.has(r.month)) return false;
+      return true;
+    });
+  }, [records, currency, department, monthFilter]);
+
+  const maxDate = useMemo(() => {
+    const ds = filtered.map((r) => r.date).filter((d) => d instanceof Date && !isNaN(d));
+    return ds.length ? new Date(Math.max(...ds)) : null;
+  }, [filtered]);
+
+  const totals = useMemo(() => {
+    let amount = 0, settled = 0, outstanding = 0, overdue30 = 0, count = 0;
+    filtered.forEach((r) => {
+      amount += r.amount;
+      settled += r.settled;
+      outstanding += r.outstanding;
+      count += 1;
+      if (r.outstanding && maxDate && r.date instanceof Date && !isNaN(r.date)) {
+        const ageDays = (maxDate - r.date) / 86400000;
+        if (ageDays > 30) overdue30 += r.outstanding;
+      }
+    });
+    return { amount, settled, outstanding, overdue30, count };
+  }, [filtered, maxDate]);
+
+  const byStatus = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.status, (m.get(r.status) || 0) + r.amount));
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  }, [filtered]);
+
+  const byDept = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.department, (m.get(r.department) || 0) + r.settled));
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [filtered]);
+
+  const byMonth = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.month, (m.get(r.month) || 0) + r.settled));
+    return PAY_MONTH_ORDER.filter((mo) => m.has(mo)).map((mo) => [mo, m.get(mo)]);
+  }, [filtered]);
+
+  const maxDept = Math.max(1, ...byDept.map((d) => Math.abs(d[1])));
+  const maxMonth = Math.max(1, ...byMonth.map((d) => Math.abs(d[1])));
+  const maxStatus = Math.max(1, ...byStatus.map((d) => Math.abs(d[1])));
+  const statusColor = (s) => (s === "Closed" ? GREEN : s === "Pending Approval" ? GOLD : RUST);
+
+  return (
+    <div>
+      <PageHeader title="Payments" />
+
+      {records.length === 0 ? (
+        <EmptyState icon={IconInbox} title="No payments data yet" body={<>Go to <b>Upload data</b> to add the Payments Data export and this view will fill in.</>} />
+      ) : (
+        <>
+          <div style={{ padding: "0 28px", display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Currency</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {currencies.map((c) => (
+                  <button key={c} className={`chip${currency === c ? " chip-active" : ""}`} onClick={() => setCurrency(c)} style={{ fontFamily: FONT_NUM, fontSize: 12.5, padding: "5px 12px", borderRadius: RADIUS_SM, background: currency === c ? INK : "transparent", color: currency === c ? PAPER : INK, border: `1px solid ${INK}` }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Department</div>
+              <select value={department} onChange={(e) => setDepartment(e.target.value)} style={{ fontFamily: FONT_UI, fontSize: 13, padding: "6px 8px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, color: INK }}>
+                {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Month</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {months.map((m) => (
+                  <button key={m} className={`chip${monthFilter.has(m) ? " chip-active" : ""}`} onClick={() => toggleMonth(m)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 11px", borderRadius: RADIUS_SM, background: monthFilter.has(m) ? GREEN_DARK : "transparent", color: monthFilter.has(m) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{m}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "20px 28px 4px" }}>
+            <StatCard label="Total amount" value={kMoney(totals.amount)} icon={IconWallet} />
+            <StatCard label="Settled amount" value={kMoney(totals.settled)} icon={IconTrendUp} tone="green" />
+            <StatCard label="Outstanding amount" value={kMoney(totals.outstanding)} icon={IconClock} tone={totals.outstanding ? "rust" : "navy"} />
+            <StatCard label="Transaction count" value={totals.count.toLocaleString()} icon={IconReceipt} />
+            <StatCard label="Outstanding >30 days" value={kMoney(totals.overdue30)} icon={IconTrendDown} tone={totals.overdue30 ? "rust" : "navy"} />
+          </div>
+
+          <div style={{ padding: "24px 28px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <SectionHeading icon={IconReceipt}>By status</SectionHeading>
+              {byStatus.map(([status, val]) => {
+                const width = (Math.abs(val) / maxStatus) * 100;
+                const pct = totals.amount !== 0 ? (val / totals.amount) * 100 : 0;
+                return (
+                  <div key={status} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+                      <span>{status}</span>
+                      <span style={{ fontFamily: FONT_NUM }}>{kMoney(val)} ({pct.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ height: 9, background: PAPER_2, borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: statusColor(status), borderRadius: 5 }} />
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div style={{ marginTop: 22, marginBottom: 12 }}><SectionHeading icon={IconLayers}>Settled by department</SectionHeading></div>
+              {byDept.map(([dept, val]) => {
+                const width = (Math.abs(val) / maxDept) * 100;
+                return (
+                  <div key={dept} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
+                      <span>{dept}</span>
+                      <span style={{ fontFamily: FONT_NUM }}>{kMoney(val)}</span>
+                    </div>
+                    <div style={{ height: 7, background: PAPER_2, borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: GREEN_DARK, borderRadius: 4 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <SectionHeading icon={IconTrendUp}>Settled amount by month</SectionHeading>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 190, borderBottom: `1px solid ${RULE_STRONG}`, paddingBottom: 4 }}>
+                {byMonth.map(([m, val]) => {
+                  const h = (Math.abs(val) / maxMonth) * 160;
+                  return (
+                    <div key={m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <div style={{ fontFamily: FONT_NUM, fontSize: 10.5, color: MUTED }}>{kMoney(val)}</div>
+                      <div style={{ width: "68%", height: h, background: `linear-gradient(180deg, ${GREEN}, ${GREEN_DARK})`, borderRadius: "4px 4px 0 0" }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                {byMonth.map(([m]) => <div key={m} style={{ flex: 1, textAlign: "center", fontSize: 11.5, color: MUTED }}>{m}</div>)}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Debtors panel — view only                                           */
+/* ------------------------------------------------------------------ */
+
+function DebtorsPanel({ records }) {
+  const [branchFilter, setBranchFilter] = useState(new Set());
+  const [channelFilter, setChannelFilter] = useState(new Set());
+  const [dateFilter, setDateFilter] = useState(new Set());
+  const [currency, setCurrency] = useState("USD");
+  const [search, setSearch] = useState("");
+
+  const branches = useMemo(() => Array.from(new Set(records.map((r) => r.branch))).sort(), [records]);
+  const channels = useMemo(() => Array.from(new Set(records.map((r) => r.channel))).sort(), [records]);
+  const currencies = useMemo(() => Array.from(new Set(records.map((r) => r.currency))).sort(), [records]);
+  const dates = useMemo(
+    () => Array.from(new Set(records.map((r) => fmtDate(r.date)))).sort((a, b) => {
+      const da = records.find((r) => fmtDate(r.date) === a)?.date;
+      const db = records.find((r) => fmtDate(r.date) === b)?.date;
+      return (da || 0) - (db || 0);
+    }),
+    [records]
+  );
+
+  function toggle(setFn, current, value) {
+    const next = new Set(current);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setFn(next);
+  }
+
+  const filtered = useMemo(() => {
+    return records.filter((r) => {
+      if (r.currency !== currency) return false;
+      if (branchFilter.size > 0 && !branchFilter.has(r.branch)) return false;
+      if (channelFilter.size > 0 && !channelFilter.has(r.channel)) return false;
+      if (dateFilter.size > 0 && !dateFilter.has(fmtDate(r.date))) return false;
+      if (search && !r.acctName.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [records, currency, branchFilter, channelFilter, dateFilter, search]);
+
+  const totals = useMemo(() => {
+    const t = { accountBalance: 0 };
+    AGING_BUCKETS.forEach((b) => (t[b.key] = 0));
+    filtered.forEach((r) => {
+      t.accountBalance += r.accountBalance;
+      AGING_BUCKETS.forEach((b) => (t[b.key] += r[b.key]));
+    });
+    return t;
+  }, [filtered]);
+
+  const byBranch = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.branch, (m.get(r.branch) || 0) + r.accountBalance));
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  }, [filtered]);
+
+  const byAccount = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.acctName, (m.get(r.acctName) || 0) + r.accountBalance));
+    return Array.from(m.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 12);
+  }, [filtered]);
+
+  const maxBranch = Math.max(1, ...byBranch.map((b) => Math.abs(b[1])));
+  const maxAgingBucket = Math.max(1, ...AGING_BUCKETS.map((b) => Math.abs(totals[b.key])));
+
+  return (
+    <div>
+      <PageHeader title="Debtors" />
+
+      {records.length === 0 ? (
+        <EmptyState icon={IconUsers} title="No debtors data yet" body={<>Go to <b>Upload data</b> to add your combined file or the Sirius exports.</>} />
+      ) : (
+        <>
+          <div style={{ padding: "0 28px", display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Currency</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {currencies.map((c) => (
+                  <button key={c} className={`chip${currency === c ? " chip-active" : ""}`} onClick={() => setCurrency(c)} style={{ fontFamily: FONT_NUM, fontSize: 12.5, padding: "5px 12px", borderRadius: RADIUS_SM, background: currency === c ? INK : "transparent", color: currency === c ? PAPER : INK, border: `1px solid ${INK}` }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Date</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {dates.map((d) => (
+                  <button key={d} className={`chip${dateFilter.has(d) ? " chip-active" : ""}`} onClick={() => toggle(setDateFilter, dateFilter, d)} style={{ fontFamily: FONT_NUM, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: dateFilter.has(d) ? GREEN_DARK : "transparent", color: dateFilter.has(d) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{d}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Branch</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {branches.map((b) => (
+                  <button key={b} className={`chip${branchFilter.has(b) ? " chip-active" : ""}`} onClick={() => toggle(setBranchFilter, branchFilter, b)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: branchFilter.has(b) ? GREEN_DARK : "transparent", color: branchFilter.has(b) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{b}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Channel</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {channels.map((c) => (
+                  <button key={c} className={`chip${channelFilter.has(c) ? " chip-active" : ""}`} onClick={() => toggle(setChannelFilter, channelFilter, c)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: channelFilter.has(c) ? GREEN_DARK : "transparent", color: channelFilter.has(c) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Search debtor</div>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Account name" style={{ fontFamily: FONT_UI, fontSize: 13, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "20px 28px 4px" }}>
+            {AGING_BUCKETS.map((b) => (
+              <div key={b.key} className="stat-card" style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "12px 16px", flex: 1, minWidth: 120 }}>
+                <div style={{ fontSize: 10.5, color: MUTED, marginBottom: 6, fontWeight: 500 }}>{b.label}</div>
+                <div style={{ fontFamily: FONT_NUM, fontSize: 16, color: totals[b.key] < 0 ? RUST : INK }}>{kMoney(totals[b.key])}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding: "24px 28px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <div style={{ fontFamily: FONT_UI, fontSize: 11.5, color: MUTED, fontWeight: 500, marginBottom: 4 }}>Total from debtors</div>
+              <div style={{ fontFamily: FONT_NUM, fontSize: 32, color: RUST, marginBottom: 18 }}>{kMoney(totals.accountBalance)}</div>
+
+              <SectionHeading icon={IconClock}>Ageing</SectionHeading>
+              {AGING_BUCKETS.map((b) => {
+                const val = totals[b.key];
+                const pct = totals.accountBalance !== 0 ? (val / totals.accountBalance) * 100 : 0;
+                const width = (Math.abs(val) / maxAgingBucket) * 100;
+                return (
+                  <div key={b.key} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTED, marginBottom: 2 }}>
+                      <span>{b.label}</span>
+                      <span style={{ fontFamily: FONT_NUM }}>{kMoney(val)} ({pct.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ height: 8, background: PAPER_2, borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: b.color, borderRadius: 5 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <SectionHeading icon={IconLandmark}>Sum of grand total by branch</SectionHeading>
+              {byBranch.map(([branch, val]) => {
+                const width = (Math.abs(val) / maxBranch) * 100;
+                return (
+                  <div key={branch} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+                      <span>{branch}</span>
+                      <span style={{ fontFamily: FONT_NUM, color: val < 0 ? RUST : INK }}>{kMoney(val)}</span>
+                    </div>
+                    <div style={{ height: 9, background: PAPER_2, borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: `linear-gradient(90deg, ${GREEN}, ${GREEN_DARK})`, borderRadius: 5 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ padding: "0 28px 28px" }}>
+            <SectionHeading icon={IconUsers}>Top debtors</SectionHeading>
+            <div style={{ border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_NUM, fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: PAPER_2, borderBottom: `1px solid ${RULE}` }}>
+                  <th style={{ textAlign: "left", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>A/C name</th>
+                  <th style={{ textAlign: "right", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>Grand total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byAccount.map(([name, val], i) => (
+                  <tr key={name} className="data-row" style={{ background: i % 2 === 1 ? PAPER_2 : "transparent", borderBottom: `1px solid ${RULE}` }}>
+                    <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontSize: 13 }}>{name}</td>
+                    <td style={{ padding: "9px 10px", textAlign: "right", color: val < 0 ? RUST : INK }}>{money(val)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: `2px solid ${INK}` }}>
+                  <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontWeight: 500, fontSize: 13 }}>Total ({filtered.length} accounts)</td>
+                  <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 500, color: totals.accountBalance < 0 ? RUST : INK }}>{money(totals.accountBalance)}</td>
+                </tr>
+              </tfoot>
+            </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* RI receivables panel — view only                                    */
+/* ------------------------------------------------------------------ */
+
+function RIReceivablesPanel({ records }) {
+  const [currency, setCurrency] = useState("USD");
+  const [channelFilter, setChannelFilter] = useState(new Set());
+  const [agreementFilter, setAgreementFilter] = useState(new Set());
+  const [thdFilter, setThdFilter] = useState(new Set());
+  const [dateFilter, setDateFilter] = useState(new Set());
+  const [search, setSearch] = useState("");
+
+  const currencies = useMemo(() => Array.from(new Set(records.map((r) => r.currency))).sort(), [records]);
+  const channels = useMemo(() => Array.from(new Set(records.map((r) => r.channel))).sort(), [records]);
+  const agreements = useMemo(() => Array.from(new Set(records.map((r) => r.riAgreement))).sort(), [records]);
+  const thdOptions = useMemo(() => Array.from(new Set(records.map((r) => r.thdOrGi))).sort(), [records]);
+  const dates = useMemo(() => Array.from(new Set(records.map((r) => fmtDate(r.date)))).sort(), [records]);
+
+  function toggle(setFn, current, value) {
+    const next = new Set(current);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setFn(next);
+  }
+
+  const filtered = useMemo(() => {
+    return records.filter((r) => {
+      if (r.currency !== currency) return false;
+      if (channelFilter.size > 0 && !channelFilter.has(r.channel)) return false;
+      if (agreementFilter.size > 0 && !agreementFilter.has(r.riAgreement)) return false;
+      if (thdFilter.size > 0 && !thdFilter.has(r.thdOrGi)) return false;
+      if (dateFilter.size > 0 && !dateFilter.has(fmtDate(r.date))) return false;
+      if (search && !r.insured.toLowerCase().includes(search.toLowerCase()) && !r.shortCode.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [records, currency, channelFilter, agreementFilter, thdFilter, dateFilter, search]);
+
+  const total = useMemo(() => filtered.reduce((a, r) => a + r.outstanding, 0), [filtered]);
+
+  const byAgeing = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.ageing, (m.get(r.ageing) || 0) + r.outstanding));
+    const known = AGEING_ORDER.filter((a) => m.has(a)).map((a) => [a, m.get(a)]);
+    const rest = Array.from(m.entries()).filter(([a]) => !AGEING_ORDER.includes(a));
+    return [...known, ...rest];
+  }, [filtered]);
+
+  const byChannel = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.channel, (m.get(r.channel) || 0) + r.outstanding));
+    return Array.from(m.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  }, [filtered]);
+
+  const byAccount = useMemo(() => {
+    const m = new Map();
+    filtered.forEach((r) => m.set(r.shortCode, (m.get(r.shortCode) || 0) + r.outstanding));
+    return Array.from(m.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 12);
+  }, [filtered]);
+
+  const maxChannel = Math.max(1, ...byChannel.map((c) => Math.abs(c[1])));
+  const maxAgeing = Math.max(1, ...byAgeing.map((a) => Math.abs(a[1])));
+
+  return (
+    <div>
+      <PageHeader title="RI receivables" />
+
+      {records.length === 0 ? (
+        <EmptyState icon={IconShield} title="No RI receivables data yet" body={<>Go to <b>Upload data</b> to add the RI export.</>} />
+      ) : (
+        <>
+          <div style={{ padding: "0 28px", display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Currency</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {currencies.map((c) => (
+                  <button key={c} className={`chip${currency === c ? " chip-active" : ""}`} onClick={() => setCurrency(c)} style={{ fontFamily: FONT_NUM, fontSize: 12.5, padding: "5px 12px", borderRadius: RADIUS_SM, background: currency === c ? INK : "transparent", color: currency === c ? PAPER : INK, border: `1px solid ${INK}` }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>RI agreement</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {agreements.map((a) => (
+                  <button key={a} className={`chip${agreementFilter.has(a) ? " chip-active" : ""}`} onClick={() => toggle(setAgreementFilter, agreementFilter, a)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: agreementFilter.has(a) ? GREEN_DARK : "transparent", color: agreementFilter.has(a) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{a}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>THD or GI</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {thdOptions.map((t) => (
+                  <button key={t} className={`chip${thdFilter.has(t) ? " chip-active" : ""}`} onClick={() => toggle(setThdFilter, thdFilter, t)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: thdFilter.has(t) ? GREEN_DARK : "transparent", color: thdFilter.has(t) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{t}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Date</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {dates.map((d) => (
+                  <button key={d} className={`chip${dateFilter.has(d) ? " chip-active" : ""}`} onClick={() => toggle(setDateFilter, dateFilter, d)} style={{ fontFamily: FONT_NUM, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: dateFilter.has(d) ? GREEN_DARK : "transparent", color: dateFilter.has(d) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{d}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Search</div>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Short code or insured" style={{ fontFamily: FONT_UI, fontSize: 13, padding: "6px 10px", borderRadius: RADIUS_SM, border: `1px solid ${RULE_STRONG}`, background: PAPER, width: "100%", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          <div style={{ padding: "16px 28px 0" }}>
+            <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, fontWeight: 500 }}>Channel</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {channels.map((c) => (
+                <button key={c} className={`chip${channelFilter.has(c) ? " chip-active" : ""}`} onClick={() => toggle(setChannelFilter, channelFilter, c)} style={{ fontFamily: FONT_UI, fontSize: 12, padding: "5px 12px", borderRadius: RADIUS_SM, background: channelFilter.has(c) ? GREEN_DARK : "transparent", color: channelFilter.has(c) ? PAPER : INK, border: `1px solid ${RULE_STRONG}` }}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ padding: "24px 28px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <div style={{ fontFamily: FONT_UI, fontSize: 11.5, color: MUTED, fontWeight: 500, marginBottom: 4 }}>Total receivables</div>
+              <div style={{ fontFamily: FONT_NUM, fontSize: 32, color: RUST, marginBottom: 20 }}>{kMoney(total)}</div>
+
+              <SectionHeading icon={IconClock}>Outstanding by ageing</SectionHeading>
+              {byAgeing.map(([ageing, val]) => {
+                const width = (Math.abs(val) / maxAgeing) * 100;
+                const pct = total !== 0 ? (val / total) * 100 : 0;
+                return (
+                  <div key={ageing} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTED, marginBottom: 2 }}>
+                      <span>{ageing}</span>
+                      <span style={{ fontFamily: FONT_NUM }}>{kMoney(val)} ({pct.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ height: 8, background: PAPER_2, borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: AGEING_COLOR[ageing] || GREEN_DARK, borderRadius: 5 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: PAPER, border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, padding: "18px 20px" }}>
+              <SectionHeading icon={IconLayers}>Outstanding by channel</SectionHeading>
+              {byChannel.map(([channel, val]) => {
+                const width = (Math.abs(val) / maxChannel) * 100;
+                const pct = total !== 0 ? (val / total) * 100 : 0;
+                return (
+                  <div key={channel} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+                      <span>{channel}</span>
+                      <span style={{ fontFamily: FONT_NUM, color: val < 0 ? RUST : INK }}>{kMoney(val)} ({pct.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ height: 9, background: PAPER_2, borderRadius: 5, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${width}%`, background: `linear-gradient(90deg, ${BLUE}, ${GREEN_DARK})`, borderRadius: 5 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ padding: "0 28px 28px" }}>
+            <SectionHeading icon={IconShield}>Top accounts</SectionHeading>
+            <div style={{ border: `1px solid ${RULE}`, borderRadius: RADIUS, boxShadow: SHADOW, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_NUM, fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: PAPER_2, borderBottom: `1px solid ${RULE}` }}>
+                  <th style={{ textAlign: "left", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>Short code</th>
+                  <th style={{ textAlign: "right", fontFamily: FONT_UI, fontWeight: 500, fontSize: 11, color: MUTED, padding: "10px 10px" }}>Outstanding amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byAccount.map(([code, val], i) => (
+                  <tr key={code} className="data-row" style={{ background: i % 2 === 1 ? PAPER_2 : "transparent", borderBottom: `1px solid ${RULE}` }}>
+                    <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontSize: 13 }}>{code}</td>
+                    <td style={{ padding: "9px 10px", textAlign: "right", color: val < 0 ? RUST : INK }}>{money(val)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: `2px solid ${INK}` }}>
+                  <td style={{ padding: "9px 10px", fontFamily: FONT_UI, fontWeight: 500, fontSize: 13 }}>Total ({filtered.length} lines)</td>
+                  <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 500, color: total < 0 ? RUST : INK }}>{money(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* App shell — owns all upload state, routes to view-only panels       */
+/* ------------------------------------------------------------------ */
+
+function todayISO() { return todayISOLocal(); }
+function addDaysISO(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function FinanceDashboard() {
+  const [active, setActive] = useState("overview");
+  const auth = useTreasuryAuth();
+
+  const [selectedDate, setSelectedDate] = useState(todayISO());
+
+  const [paymentsFiles, setPaymentsFiles] = useState([]);
+  const [paymentsRecords, setPaymentsRecords] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState("");
+  const [paymentsAudit, setPaymentsAudit] = useState([]);
+
+  const [debtorsFiles, setDebtorsFiles] = useState([]);
+  const [debtorsRecords, setDebtorsRecords] = useState([]);
+  const [debtorsLoading, setDebtorsLoading] = useState(false);
+  const [debtorsError, setDebtorsError] = useState("");
+  const [debtorsAudit, setDebtorsAudit] = useState([]);
+
+  const [riFiles, setRiFiles] = useState([]);
+  const [riRecords, setRiRecords] = useState([]);
+  const [riLoading, setRiLoading] = useState(false);
+  const [riError, setRiError] = useState("");
+  const [riAudit, setRiAudit] = useState([]);
+
+  const [cloudLoading, setCloudLoading] = useState(false);
+
+  async function refreshAudit(dataset) {
+    const sb = getTreasuryClient();
+    if (!sb) return;
+    try {
+      const rows = await fetchFinanceAudit(sb, dataset, 8);
+      if (dataset === "payments") setPaymentsAudit(rows);
+      if (dataset === "debtors") setDebtorsAudit(rows);
+      if (dataset === "ri") setRiAudit(rows);
+    } catch (e) { /* audit is informational only — a failure here shouldn't block the page */ }
+  }
+
+  // Load whichever day is selected — runs on mount, when the day changes,
+  // and once treasury sign-in completes (data lives behind auth).
+  useEffect(() => {
+    if (auth.stage !== "ready") return;
+    (async () => {
+      setCloudLoading(true);
+      const sb = getTreasuryClient();
+      for (const [dataset, setRecords, setFiles] of [
+        ["payments", setPaymentsRecords, setPaymentsFiles],
+        ["debtors", setDebtorsRecords, setDebtorsFiles],
+        ["ri", setRiRecords, setRiFiles],
+      ]) {
+        try {
+          const snap = await loadFinanceSnapshot(sb, dataset, selectedDate);
+          if (snap) {
+            setRecords(reviveDates(snap.data, ["date"]));
+            setFiles([{ name: "Loaded from cloud (" + selectedDate + ")", count: snap.data.length }]);
+          } else {
+            setRecords([]);
+            setFiles([]);
+          }
+        } catch (e) {
+          // table probably doesn't exist yet — leave local state as-is
+        }
+        await refreshAudit(dataset);
+      }
+      setCloudLoading(false);
+    })();
+  }, [selectedDate, auth.stage]);
+
+  async function saveDataset(dataset, combinedRecords) {
+    if (auth.stage !== "ready") return;
+    const sb = getTreasuryClient();
+    try {
+      await saveFinanceSnapshot(sb, dataset, selectedDate, combinedRecords, auth.user);
+      await refreshAudit(dataset);
+    } catch (e) {
+      const msg = "Saved locally, but couldn't save to the cloud — " + (e.message || "check the finance_snapshots table exists.");
+      if (dataset === "payments") setPaymentsError(msg);
+      if (dataset === "debtors") setDebtorsError(msg);
+      if (dataset === "ri") setRiError(msg);
+    }
+  }
+
+  async function onPaymentsFiles(fileList) {
+    setPaymentsLoading(true);
+    setPaymentsError("");
+    try {
+      const newRecords = [];
+      const newNames = [];
+      for (const file of Array.from(fileList)) {
+        const buf = await file.arrayBuffer();
+        const parsed = parsePaymentsWorkbook(file, buf);
+        newRecords.push(...parsed);
+        newNames.push({ name: file.name, count: parsed.length });
+      }
+      const combined = [...paymentsRecords, ...newRecords];
+      setPaymentsRecords(combined);
+      setPaymentsFiles((prev) => [...prev, ...newNames]);
+      await saveDataset("payments", combined);
+    } catch (e) {
+      setPaymentsError("Couldn't read that file. Make sure it's the Payments Data export (.xlsx).");
+    }
+    setPaymentsLoading(false);
+  }
+  function onClearPayments() {
+    setPaymentsRecords([]);
+    setPaymentsFiles([]);
+  }
+
+  async function onDebtorsFiles(fileList) {
+    setDebtorsLoading(true);
+    setDebtorsError("");
+    try {
+      const newRecords = [];
+      const newNames = [];
+      for (const file of Array.from(fileList)) {
+        const buf = await file.arrayBuffer();
+        const parsed = parseDebtorsWorkbook(file, buf);
+        newRecords.push(...parsed);
+        newNames.push({ name: file.name, count: parsed.length });
+      }
+      const combined = [...debtorsRecords, ...newRecords];
+      setDebtorsRecords(combined);
+      setDebtorsFiles((prev) => [...prev, ...newNames]);
+      await saveDataset("debtors", combined);
+    } catch (e) {
+      setDebtorsError("Couldn't read one of those files. Make sure they're the Sirius Age Analysis exports (.xlsx).");
+    }
+    setDebtorsLoading(false);
+  }
+  function onClearDebtors() {
+    setDebtorsRecords([]);
+    setDebtorsFiles([]);
+  }
+  function onDownloadDebtorsCombined() {
+    const header = [
+      "Channel", "A/CCode", "A/CName", "Unallocated\nCash", "Account Balance", "Not Yet\nDue",
+      "0-30 Days\nDue", "31-60", "61-90", "91-120", "121-180", "180-365", "Over 365 days",
+      "Currency", "Grand Total", "Date", "Branch ", "Channel",
+    ];
+    const body = debtorsRecords.map((r) => [
+      r.channel, r.acctCode, r.acctName, r.unallocatedCash, r.accountBalance, r.notYetDue,
+      r.d0_30, r.d31_60, r.d61_90, r.d91_120, r.d121_180, r.d180_365, r.over365,
+      r.currency, r.grandTotal, r.date || null, r.branch, r.channel,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Combined Debtors");
+    XLSX.writeFile(wb, "debtors_combined.xlsx");
+  }
+
+  async function onRIFiles(fileList) {
+    setRiLoading(true);
+    setRiError("");
+    try {
+      const newRecords = [];
+      const newNames = [];
+      for (const file of Array.from(fileList)) {
+        const buf = await file.arrayBuffer();
+        const parsed = parseRIWorkbook(file, buf);
+        newRecords.push(...parsed);
+        newNames.push({ name: file.name, count: parsed.length });
+      }
+      const combined = [...riRecords, ...newRecords];
+      setRiRecords(combined);
+      setRiFiles((prev) => [...prev, ...newNames]);
+      await saveDataset("ri", combined);
+    } catch (e) {
+      setRiError("Couldn't read that file. Make sure it's the RI receivables export (.xlsx).");
+    }
+    setRiLoading(false);
+  }
+  function onClearRI() {
+    setRiRecords([]);
+    setRiFiles([]);
+  }
+
+  const dataStatus = {
+    payments: paymentsRecords.length > 0,
+    debtors: debtorsRecords.length > 0,
+    ri: riRecords.length > 0,
+  };
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: PAPER, fontFamily: FONT_UI }}>
+      <Sidebar
+        active={active} onSelect={setActive} dataStatus={dataStatus}
+        selectedDate={selectedDate}
+        onPrevDay={() => setSelectedDate((d) => addDaysISO(d, -1))}
+        onNextDay={() => setSelectedDate((d) => addDaysISO(d, 1))}
+        onToday={() => setSelectedDate(todayISO())}
+        onDateChange={setSelectedDate}
+        cloudLoading={cloudLoading}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {active === "overview" && (
+          <OverviewPanel paymentsRecords={paymentsRecords} debtorsRecords={debtorsRecords} riRecords={riRecords} onNavigate={setActive} selectedDate={selectedDate} />
+        )}
+        {active === "upload" && (
+          <UploadPanel
+            auth={auth}
+            selectedDate={selectedDate}
+            paymentsFiles={paymentsFiles} paymentsLoading={paymentsLoading} paymentsError={paymentsError} paymentsAudit={paymentsAudit}
+            onPaymentsFiles={onPaymentsFiles} onClearPayments={onClearPayments}
+            debtorsFiles={debtorsFiles} debtorsLoading={debtorsLoading} debtorsError={debtorsError} debtorsAudit={debtorsAudit}
+            onDebtorsFiles={onDebtorsFiles} onClearDebtors={onClearDebtors} onDownloadDebtorsCombined={onDownloadDebtorsCombined}
+            riFiles={riFiles} riLoading={riLoading} riError={riError} riAudit={riAudit}
+            onRIFiles={onRIFiles} onClearRI={onClearRI}
+          />
+        )}
+        {active === "cash" && <CashPositionPanel auth={auth} />}
+        {active === "payments" && <PaymentsPanel records={paymentsRecords} />}
+        {active === "debtors" && <DebtorsPanel records={debtorsRecords} />}
+        {active === "ri" && <RIReceivablesPanel records={riRecords} />}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<FinanceDashboard />);
+</script>
+</body>
+</html>
